@@ -7,6 +7,7 @@
                  [circleci/clj-yaml "0.5.3"]
                  [com.taoensso/timbre "2.7.1"]
                  [diffit "1.0.0"]
+                 [org.clojure/tools.cli "0.3.1"]
                  ]
   :main ^:skip-aot yamlupgrade.core
   :target-path "target/%s"
