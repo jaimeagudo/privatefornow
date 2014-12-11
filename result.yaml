@@ -1,0 +1,70 @@
+ssl_storage_port: 7001
+storage_port: 7000
+commitlog_segment_size_in_mb: 32
+key_cache_size_in_mb: 
+start_rpc: true
+memtable_flush_queue_size: 4
+client_encryption_options: {keystore_password: cassandra, keystore: conf/.keystore,
+  enabled: false}
+inter_dc_tcp_nodelay: true
+rpc_server_type: sync
+authorizer: AllowAllAuthorizer
+num_tokens: 256
+row_cache_save_period: 0
+disk_failure_policy: stop
+native_transport_port: 9042
+server_encryption_options: {truststore_password: cassandra, truststore: conf/.truststore,
+  keystore_password: cassandra, keystore: conf/.keystore, internode_encryption: none}
+dynamic_snitch_reset_interval_in_ms: 600000
+compaction_throughput_mb_per_sec: 16
+data_file_directories: [/var/lib/cassandra/data]
+column_index_size_in_kb: 64
+rpc_keepalive: true
+snapshot_before_compaction: false
+concurrent_reads: 32
+key_cache_save_period: 14400
+row_cache_size_in_mb: 0
+tombstone_warn_threshold: 1000
+rpc_address: localhost
+concurrent_writes: 32
+commitlog_sync: periodic
+trickle_fsync: false
+compaction_preheat_key_cache: true
+write_request_timeout_in_ms: 10000
+incremental_backups: false
+truncate_request_timeout_in_ms: 60000
+preheat_kernel_page_cache: false
+read_request_timeout_in_ms: 10000
+request_timeout_in_ms: 10000
+start_native_transport: true
+saved_caches_directory: /var/lib/cassandra/saved_caches
+internode_compression: all
+authenticator: AllowAllAuthenticator
+max_hints_delivery_threads: 2
+cross_node_timeout: false
+partitioner: org.apache.cassandra.dht.Murmur3Partitioner
+tombstone_failure_threshold: 100000
+hinted_handoff_enabled: true
+hinted_handoff_throttle_in_kb: 1024
+max_hint_window_in_ms: 10800000
+multithreaded_compaction: false
+auto_snapshot: true
+range_request_timeout_in_ms: 10000
+commitlog_directory: /var/lib/cassandra/commitlog
+seed_provider:
+- class_name: org.apache.cassandra.locator.SimpleSeedProvider
+  parameters:
+  - {seeds: 127.0.0.1}
+dynamic_snitch_update_interval_in_ms: 100
+trickle_fsync_interval_in_kb: 10240
+listen_address: localhost
+commitlog_sync_period_in_ms: 10000
+cluster_name: Test Cluster
+in_memory_compaction_limit_in_mb: 64
+endpoint_snitch: SimpleSnitch
+dynamic_snitch_badness_threshold: 0.1
+permissions_validity_in_ms: 2000
+rpc_port: 9160
+cas_contention_timeout_in_ms: 1000
+thrift_framed_transport_size_in_mb: 15
+request_scheduler: org.apache.cassandra.scheduler.NoScheduler

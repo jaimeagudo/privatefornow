@@ -28,6 +28,15 @@
   (if (pos? (-> @cli-opts :options :verbosity))
     (timbre/log (pprint o))))
 
+(defn replace-nils!
+  "Replace nil values within the given map with empty strings. Useful before serialize"
+  [m weird-marker]
+  (zipmap (keys m) (map #(cond
+                          (nil? %) weird-marker  ; Empty string is replaced by simple quotes :( TOFIX
+                          (map? %) (replace-nils! % weird-marker)
+                          :else %) (vals m))))
+
+
 
 (defn- parse-yaml
   "Slurps a yaml file and returns it content as a map. If not present logs error and returns nil."
@@ -38,6 +47,19 @@
     (catch Exception ex
       (timbre/error "safe-slurp: Cannot locate file: " filename)
       nil)))
+
+(defn- write-yaml
+  "Serialize a clojure map in yaml formatted file. Returns true on success"
+  [filename m]
+  (let [weird-marker "JaImE"     ; ugly as hell but works. Empty string is replaced by simple quotes :( TOFIX
+        s (string/replace (yaml/generate-string (replace-nils! m weird-marker)) (re-pattern weird-marker) "")]
+    (try
+      (spit filename s)
+      true
+      (catch Exception ex
+        (timbre/error ex)
+        (timbre/error "safe-spit: Cannot write file: " filename)
+        nil))))
 
 
 ;; (yaml/parse-string "
@@ -93,7 +115,29 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn sanitize [s] s) ; TODO
+(defn sanitize
+  "Sanitize string to remove prohibited chars"
+  [s]
+  (let [CONTROL_CHARS (apply str (map char (conj (range 32) 127)))
+        RESERVED_CHARS "$&+,/:;=?@"
+        UNSAFE_CHARS "\"<>#%\\{\\}\\|\\^~\\[\\]`"
+        EXTRA_CHARS "\\(\\)!\\\\-"
+        BLACKLIST_PATTERN (re-pattern (str "[" CONTROL_CHARS RESERVED_CHARS UNSAFE_CHARS EXTRA_CHARS "]"))]
+    (-> s string/lower-case
+        (string/replace BLACKLIST_PATTERN " ")
+        string/trim
+        ;;         (s/replace #"[\s]+" "-")
+        (string/replace #"'" ""))))
+
+; (defn url-escape-str "doc-string" [string]
+;   (java.net.URLEncoder/encode string))
+
+;; (defn format-date
+;;   ([](format-date (date) "yyyy MM dd HH mm ss"))
+;;   ([x](if (string? x)
+;;         (format-date (date) x)
+;;         (format-date x "yyyy MM dd HH mm ss")))
+;;   ([dt fmt](.format (SimpleDateFormat. fmt) dt)))
 
 
 (defn resolve-conflicts
@@ -101,50 +145,94 @@
   [current-config new-config conflict-keys]
   (println "Please choose to (k)eep the current value, (u)pgrade to new version safe default value or a (c)ustom one")
   (println "--------------------------------------------------------------------------------------------------------")
-  (log conflict-keys)
-  (zipmap conflict-keys
+;;   (log "conflicting keys=>")
+;;   (log  conflict-keys)
+  (let [values
           (for [k conflict-keys
                 :let [current (k current-config)
                       new (k new-config)]]
-                (loop []
-                  (if (nil?
-                       (try
-                         (println (str (name k) "=" current "(k)  " new "(u)  <<CUSTOM>>(c)"))
-                         (case (first (safe-read))
-                           \k current
-                           \u new
-                           \c (sanitize (safe-read))
-                           )
-                         (catch Exception ex
-                           (timbre/error ex)
-                           nil)))
-                  (recur))))))
+            (loop []
+              (println (str (name k) "=" current "(k)  " new "(u)  <<CUSTOM>>(c)"))
+              (let [chosen (case (first (safe-read))
+                             \k current
+                             \u new
+                             \c (sanitize (safe-read))
+                             nil)]
+                (if (nil? chosen)
+                  (recur)
+                  chosen))))]
+            (log "values")
+            (log values)
+            (zipmap conflict-keys values)))
 
 
 
 
-(defn customize-defaults
-  "Interactively build and return a map with the chosen values for the conflicting keys"
-  [current-config new-keys]
+(defn customize-map
+  "For each key in the given map ask to keep its current value or a custom one. It retuns the resultant map"
+  [m]
   (println "Please choose to (k)eep the current safe default value or provide a (c)ustom one")
-  (println "--------------------------------------------------------------------------------------------------------")
-  (log new-keys)
-  (zipmap new-keys
-          (for [k new-keys
-                :let [current (k current-config)]]
-                (loop []
-                  (if (nil?
-                       (try
-                         (println (str (name k) "=" current "(k)  <<CUSTOM>>(c)"))
-                         (case (first (safe-read))
-                           \k current
-                           \c (sanitize (safe-read))
-                           )
-                         (catch Exception ex
-                           (timbre/error ex)
-                           nil)))
-                  (recur))))))
+  (println "--------------------------------------------------------------------------------")
+  (let [ks (keys m)
+        values
+            (for [k ks
+                  :let [v (k m)]]
+              (loop []
+                (println (str (name k) "=" v "(k)  <<CUSTOM>>(c)"))
+                (let [chosen (case (first (safe-read))
+                               \k v
+                               \c (sanitize (safe-read))
+                               nil)]
+                  (if (nil? chosen)
+                    (recur)
+                    chosen))))]
+    (log "values")
+    (log values)
+    (zipmap ks values)))
 
+
+
+(defn upgrade-config!
+  "Upgrades current-config to new a version with the given safe defaults as base and guided by the given options.
+  Takes and returns Clojure maps, .yaml agnostic"
+  [current-config new-config options]
+    (let [edit-script (second (m/diff current-config new-config))
+          base-config
+          (if (empty? (:r edit-script))
+            new-config
+            (case (:conflict-resolution options)
+              "preserve"     (merge new-config (select-keys current-config (:r edit-script)))
+              "upgrade"     new-config ; just take new safe-defaults from new config
+              "interactive"  (merge new-config (resolve-conflicts current-config new-config (map first (:r edit-script))))))]
+
+;;       (log edit-script)
+;;       (log base-config)
+
+      (when (seq (:- edit-script))
+        (timbre/warn "The following options found in your current .yaml file are DEPRECATED and so REMOVED from your new configuration\newline"
+                     (map #(str (name %) \newline)   (:- edit-script))))
+
+      (if (seq (:+ edit-script))
+        (if (:tune options)
+          (merge base-config (customize-map (apply assoc {} (flatten (:+ edit-script)))))
+          (do
+            (timbre/info "The following options are NEW, current values are safe defaults added to your new configuration\newline"
+                         (map #(str (name (first %)) \newline) (:+ edit-script)))
+            base-config)
+          ))))
+
+
+(defn- backup!
+  "Creates a .old backup of the given file, returns true on success."
+  [filename]
+  (try
+    ; could use mv perhaps
+    (clojure.java.shell/sh (str "cp -f " (:current-yaml options) " " (:current-yaml options) ".old"))
+    true
+  (catch Exception ex
+        (timbre/error ex)
+        (timbre/error "safe-spit: Cannot write file: " filename)
+        nil)))
 
 
 
@@ -161,34 +249,12 @@
      ;;       (not= (count arguments) 1) (exit 1 (usage summary))
      (or (nil? current-config) (nil? new-config)) (exit 1)
      errors (exit 1 (error-msg errors)))
-    (let [edit-script (second (m/diff current-config new-config))
-          result-config
-          (if (seq (:- edit-script))
-            (do
-              (log edit-script)
-              (timbre/warn "The following options found in your current .yaml file are DEPRECATED, they will REMOVED from your new configuration\newline"
-                         (map #(str (name %) \newline)   (:- edit-script)))
-              (dissoc current-config (:- edit-script)))
-            new-config)
-          base-config
-          (if (seq (:r edit-script))
-            (case (:conflict-resolution options)
-              "preserve"     (merge result-config (select-keys current-config (:r edit-script)))
-              "upgrade"      (merge result-config (select-keys new-config (:r edit-script)))
-              "interactive"  (merge result-config (resolve-conflicts current-config new-config (map first (:r edit-script))))
-              )
-            result-config)]
-      (if (seq (:+ edit-script))
-        (if (:tune options)
-          (merge base-config (customize-defaults new-config (:+ edit-script)))
-          (do
-            (timbre/warn "The following options are NEW, current values are safe defaults added to your new configuration\newline"
-                         (map #(str (name %) \newline) (:+ edit-script)))
-            base-config)
-          )))))
-
-
-;;      (println "OLD THINGS")
-;;      (pprint (walk/stringify-keys old-things))
-;;      (println "NEW THINGS")
-;;      (pprint (walk/stringify-keys new-things))
+    ;; Backup current config
+    (backup! (:current-yaml options))
+    (let [result-config (upgrade-config! current-config new-config options)]
+     (log result-config)
+     (log "Writing yaml... ")
+     (write-yaml "result.yaml" result-config)
+;;      (write-yaml (:current-yaml options result-config))
+     (log "Done!")
+     )))
