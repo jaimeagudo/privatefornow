@@ -1,6 +1,7 @@
 (ns yamlupgrade.core
   (:gen-class)
   (:use [clojure.pprint]
+        [clojure.java.shell :only [sh]]
         [taoensso.timbre :as timbre :refer (trace debug info warn error report)])
   (:require [clj-yaml.core :as yaml]
             [clojure.data :as data]
@@ -140,6 +141,18 @@
 ;;   ([dt fmt](.format (SimpleDateFormat. fmt) dt)))
 
 
+(defn cast-it!
+  [o]
+  (try
+    (case o
+      "false" false
+      "true"  true
+      (Integer/parseInt o))
+    (catch Exception ex
+      (timbre/error ex)
+      o)))
+
+
 (defn resolve-conflicts
   "Interactively build and return a map with the chosen values for the conflicting keys"
   [current-config new-config conflict-keys]
@@ -156,7 +169,7 @@
               (let [chosen (case (first (safe-read))
                              \k current
                              \u new
-                             \c (sanitize (safe-read))
+                             \c (cast-it! (sanitize (safe-read)))
                              nil)]
                 (if (nil? chosen)
                   (recur)
@@ -164,8 +177,6 @@
             (log "values")
             (log values)
             (zipmap conflict-keys values)))
-
-
 
 
 (defn customize-map
@@ -181,7 +192,7 @@
                 (println (str (name k) "=" v "(k)  <<CUSTOM>>(c)"))
                 (let [chosen (case (first (safe-read))
                                \k v
-                               \c (sanitize (safe-read))
+                               \c (cast-it! (sanitize (safe-read)))
                                nil)]
                   (if (nil? chosen)
                     (recur)
@@ -227,11 +238,13 @@
   [filename]
   (try
     ; could use mv perhaps
-    (clojure.java.shell/sh (str "cp -f " (:current-yaml options) " " (:current-yaml options) ".old"))
-    true
+    (let [command (str "cp -f " filename " " filename ".old")]
+      (log (sh "pwd")) ; see :dir http://clojuredocs.org/clojure.java.shell/sh TODO
+      (log command)
+      (= 0 (:exit (sh command))))
   (catch Exception ex
         (timbre/error ex)
-        (timbre/error "safe-spit: Cannot write file: " filename)
+        (timbre/error "backup: Cannot write file: " filename)
         nil)))
 
 
@@ -250,7 +263,7 @@
      (or (nil? current-config) (nil? new-config)) (exit 1)
      errors (exit 1 (error-msg errors)))
     ;; Backup current config
-    (backup! (:current-yaml options))
+;;     (backup! (:current-yaml options))
     (let [result-config (upgrade-config! current-config new-config options)]
      (log result-config)
      (log "Writing yaml... ")
