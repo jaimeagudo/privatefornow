@@ -54,8 +54,8 @@
   [current-config new-config conflict-keys]
   (println "Please choose to (k)eep the current value, (u)pgrade to new version safe default value or a (c)ustom one")
   (println "--------------------------------------------------------------------------------------------------------")
-;;   (log "conflicting keys=>")
-;;   (log  conflict-keys)
+;;   (trace "conflicting keys=>")
+;;   (trace  conflict-keys)
   (let [values
           (for [k conflict-keys
                 :let [current (k current-config)
@@ -70,14 +70,14 @@
                 (if (nil? chosen)
                   (recur)
                   chosen))))]
-            (log "values")
-            (log values)
+            (trace "resolved conflicts" values)
             (zipmap conflict-keys values)))
 
 
 (defn customize-map
   "For each key in the given map ask to keep its current value or a custom one. It retuns the resultant map"
   [m]
+  ;; TODO generate just changed ones
   (println "Please choose to (k)eep the current safe default value or provide a (c)ustom one")
   (println "--------------------------------------------------------------------------------")
   (let [ks (keys m)
@@ -93,64 +93,85 @@
                   (if (nil? chosen)
                     (recur)
                     chosen))))]
-    (log "values")
-    (log values)
+    (trace "customized values" values)
     (zipmap ks values)))
 
 
 
-(defn upgrade-config!
-  "Upgrades current-config to new a version with the given safe defaults as base and guided by the given options.
-  Takes and returns Clojure maps, .yaml agnostic"
+;; (defn fetch-custom-values!
+;;   "For each key in the given map ask to keep its current value or a custom one. It retuns the resultant map"
+;;   [m]
+;;   (println "Please choose to (k)eep the current safe default value or provide a (c)ustom one")
+;;   (println "--------------------------------------------------------------------------------")
+;;   (let [ks (keys m)
+;;         values
+;;             (for [k ks
+;;                   :let [v (k m)]]
+;;               (loop []
+;;                 (println (str (name k) "=" v "(k)  <<CUSTOM>>(c)"))
+;;                 (let [chosen (case (safe-read-char)
+;;                                \k v
+;;                                \c (cast-it! (sanitize (safe-read)))
+;;                                nil)]
+;;                   (if (nil? chosen)
+;;                     (recur)
+;;                     chosen))))]
+;;     (trace "values")
+;;     (trace values)
+;;     (zipmap ks values)))
+
+
+(defn confirm-edit-script!
+  "Confirms with user the edit-script between the given configs to reach
+  new-config from current-config. Takes and returns Clojure maps,
+  .yaml agnostic"
   [current-config new-config options]
     (let [edit-script (second (m/diff current-config new-config))
-          base-config
+          resolved-conflicts-edit-script
           (if (empty? (:r edit-script))
-            new-config
+            {}
             (case (:conflict-resolution options)
-              "preserve"     (merge new-config (select-keys current-config (:r edit-script)))
-              "upgrade"     new-config ; just take new safe-defaults from new config
-              "interactive"  (merge new-config (resolve-conflicts current-config new-config (map first (:r edit-script))))))]
-
-;;       (log edit-script)
-;;       (log base-config)
+              "preserve"     (select-keys current-config (:r edit-script))
+              "upgrade"      (select-keys new-config (:r edit-script)); just take new safe-defaults from new config
+              "interactive"  (resolve-conflicts current-config new-config (map first (:r edit-script)))))]
 
       (when (seq (:- edit-script))
-        (timbre/warn "The following options found in your current .yaml file are DEPRECATED and so REMOVED from your new configuration\n"
+        (warn "The following options found in your current .yaml file are DEPRECATED and so REMOVED from your new configuration\n"
                      (map #(str (name %) \n)   (:- edit-script))))
 
       (if (seq (:+ edit-script))
         (if (:tune options)
-          (merge base-config (customize-map (apply assoc {} (flatten (:+ edit-script)))))
+          ;; TODO customize-map could be optimised to return just non-defaulted values
+          (merge resolved-conflicts-edit-script (customize-map (apply assoc {} (flatten (:+ edit-script)))))
           (do
-            (timbre/info "The following options are NEW, current values are safe defaults added to your new configuration\n"
+            (info "The following options are NEW, current values are safe defaults added to your new configuration\n"
                          (map #(str (name (first %)) \n) (:+ edit-script)))
-            base-config)
+            resolved-conflicts-edit-script)
           ))))
 
 
 
 
-(defn -main [& args]
+(defn -main
+  [& args]
   "Parse options and launch upgrade process"
   (reset! cli-opts (parse-opts args cli-options))
+  (config-logger!)
   (let [{:keys [options arguments errors summary]} @cli-opts
         current-config (parse-yaml (:current-yaml options))
         new-config (parse-yaml (:new-yaml options))]
-    ;; Handle help and error conditions
-    (log options)
+;; Handle help and error conditions
+;; (trace options)
     (cond
      (:help options) (exit 0 (usage summary))
      ;;       (not= (count arguments) 1) (exit 1 (usage summary))
      (or (nil? current-config) (nil? new-config)) (exit 1)
      errors (exit 1 (error-msg errors)))
-    ;; Backup current config
+;; Backup current config
 ;;     (backup! (:current-yaml options))
-    (let [result-config (upgrade-config! current-config new-config options)]
-      (log result-config)
-      (log "Writing yaml... ")
-      (write-yaml "result.yaml" result-config (:new-yaml options))
-      )
-;;      (write-yaml (:current-yaml options result-config))
-     (log "Done!")
+    (let [result-config (confirm-edit-script! current-config new-config options)]
+      (trace result-config)
+      (info "Writing yaml... ")
+      (write-yaml! "result.yaml" result-config (:new-yaml options)))
+     (info "Done!")
      ))

@@ -29,24 +29,35 @@
         ;;         (s/replace #"[\s]+" "-")
         (string/replace #"'" ""))))
 
+(def verbosity-loglevel
+  {0 :error
+   1 :info
+   2 :debug
+   3 :trace})
 
-; TODO write as macro
-(defn log
-  "Pretty logging of the given argumetn based on global verbosity value
-  (it might log nothing if verbosity is 0)"
-  [o]
-  (if (pos? (-> @cli-opts :options :verbosity))
-    (timbre/log (pprint o))))
 
+(defn config-logger!
+  "Config the log level among (:trace :debug :info :warn :error :fatal :report)
+   If empty it picks up the properties file value or :error "
+  ([]
+   (config-logger! (get verbosity-loglevel (-> @cli-opts :options :verbosity))))
+  ([loglevel]
+;;   	(println "Configuring logger..." ERR_LOG ", level: " loglevel)
+    (timbre/set-level! loglevel)
+    (timbre/set-config! [:timestamp-pattern] "yyyy-MMM-dd HH:mm:ss")
+    (timbre/set-config! [:timestamp-locale] (java.util.Locale/UK))
+    (timbre/set-config! [:appenders :spit :enabled?] true)
+;;     (timbre/set-config! [:shared-appender-config :spit-filename] ERR_LOG))
+  ))
 
 (defn error-msg [errors]
-  (timbre/error "The following errors occurred while parsing your command:\n\n"
+  (error "The following errors occurred while parsing your command:\n\n"
        (string/join \newline errors)))
 
 
 
 (defn exit [status msg]
-  (timbre/info msg)
+  (info msg)
   (System/exit status))
 
 
@@ -61,7 +72,7 @@
       "true"  true
       (Integer/parseInt o))
     (catch Exception ex
-;;       (timbre/error ex)
+;;       (error ex)
       o)))
 
 
@@ -87,6 +98,8 @@
     (let [cr (ConsoleReader.)]
       (.readLine cr "custom="))))
 
+
+
 (defn safe-read-char
   "Should be ~safe~ to read a char with this"
   []
@@ -104,50 +117,72 @@
   (try
     (yaml/parse-string (slurp filename))
     (catch Exception ex
-      (timbre/error "safe-slurp: Cannot locate file: " filename)
+      (error "safe-slurp: Cannot locate file: " filename)
       nil)))
 
- (defn replace-in-template
-    "Takes a map of values to be applied on the given ASCII lines vector and pair of key-index for fast replacement. O(1).
-    It returns a new ASCII vector with the new value"
-    [new-values-map template-vec key-index]
-    (let [kw (first key-index)
-          index (second key-index)
-          new-ascii-line (yaml/generate-string (select-keys new-values-map kw))]
-      (log kw)
-      (log index)
-      (log new-ascii-line)
-      (assoc template-vec index new-ascii-line)))
+
+
+
+(defn replace-in-template
+  "Takes a map of indexes, an ASCII lines vector and pair of key-value to
+  replace the current one on the vector. It returns a new ASCII vector with the
+  replaced value.  O(1)."
+  [keys-index template-vec kv]
+  (let [k (first kv)
+        index (k keys-index)
+        new-ascii-line (yaml/generate-string (apply hash-map kv) :dumper-options {:flow-style :block})]
+    (trace index)
+    (trace new-ascii-line)
+    (assoc template-vec index new-ascii-line)))
+
+
+
+(defn parse-and-index-yaml
+  "Takes an index and a yaml-formatted string and returns a map where the key
+  is parsed from the string and the value is the given index. Returns nil for
+  comments etc."
+  [index item]
+  (case (first (string/trim item))
+    (\# \- \newline \return nil) nil      ; its a comment line or a list item, we could refine it to save comments as well
+    (let [m (yaml/parse-string item)
+          k (first (keys m))]
+      ;;           get ride off the value, we care about the index to provide direct access to the vector position
+      (assoc m k index))))
+
+
+(defn write-file!
+  "Returns true on success"
+  [target-filename s]
+  (try
+    (spit target-filename s)
+    true
+    (catch Exception ex
+      (error ex)
+      (error "spit: Cannot write file: " target-filename)
+      nil)))
 
 
 
 
-  (defn parse-and-index-yaml
-    "Takes an index and a yaml-formatted string and returns a map where the key
-    is parsed from the string and the value is the given index. Returns nil for
-    comments etc."
-    [index item]
-    (println "JUst one item~~~~~~~~")
-    (log item)
-    (case (first (string/trim item))
-      (\# \-) nil      ; its a comment line or a list item, we could refine it to save comments as well
-      (let [m (yaml/parse-string item)
-            j (println "m=" m)
-            k (first (keys m))]
-        ;;           get ride off the value, we care about the index to provide direct access to the vector position
-        (assoc m k index))))
 
 
-  (defn write-file!
-    "Returns true on success"
-    [target-filename s]
-    (try
-      (spit target-filename s)
-      true
-      (catch Exception ex
-        (timbre/error ex)
-        (timbre/error "spit: Cannot write file: " target-filename)
-        nil)))
+(defn write-yaml!
+  "Writes a .yaml file upgrading the values in the given template-filename with the given map"
+  ([target-filename new-config template-filename]
+    (let [;; An array with ASCII text lines
+          template (string/split-lines (slurp template-filename))
+          ;; We build a template index once O(n) to gain direct access and so constant access time O(1) to make fast replacements
+          ;; On this map keys are variables and values are the line numbers within the template file
+          template-properties-index (apply merge (keep-indexed parse-and-index-yaml template))
+;;           j (do (println "index==========") (pprint template-config-index))
+          ;; We partially call replace-in-template with the template-config
+          ;; index map as reduce f accepts just 2 arguments
+          ascii-vec (reduce (partial replace-in-template template-properties-index) template new-config)
+          target-str
+;;           (string/replace
+                      (string/join "\n" ascii-vec ) ]
+;;                                      (re-pattern "null") "")]
+      (write-file! target-filename target-str))))
 
 
 
@@ -157,33 +192,11 @@
   (try
     ; could use mv perhaps
     (let [command (str "cp -f " filename " " filename ".old")]
-      (log (sh "pwd")) ; see :dir http://clojuredocs.org/clojure.java.shell/sh TODO
-      (log command)
+      (trace (sh "pwd")) ; see :dir http://clojuredocs.org/clojure.java.shell/sh TODO
+      (trace command)
       (= 0 (:exit (sh command))))
   (catch Exception ex
-        (timbre/error ex)
-        (timbre/error "backup: Cannot write file: " filename)
+        (error ex)
+        (error "backup: Cannot write file: " filename)
         nil)))
 
-
-
-
-
-(defn write-yaml
-  "Serialize a clojure map in yaml formatted file. It accepts an optional template-filename with comments. Returns true on success"
-  ([target-filename new-config]
-   (let [weird-marker "JaImE"     ; ugly as hell but works. Empty string is replaced by simple quotes :( TOFIX
-         s (string/replace (yaml/generate-string (replace-nils! new-config weird-marker)) (re-pattern weird-marker) "")]
-     (write-file! target-filename s)))
-  ([target-filename new-config template-filename]
-    (let [tf (slurp template-filename)
-          ;; An array with ASCII text lines
-          template  (string/split-lines tf)
-          ;; We build a template index once O(n) to gain direct access and so constant access time O(1) to make fast replacements
-          ;; On this map keys are variables and values are the line numbers within the template file
-          template-config-index (apply merge (keep-indexed parse-and-index-yaml template))
-          ;; We partially call replace-in-template with the new-config map as
-          ;; reduce f accepts just 2 arguments and its value won't change
-          ascii-vec (reduce (partial replace-in-template new-config) template template-config-index)
-          target-str (string/replace (string/join ascii-vec \n) (re-pattern "null") "")]
-      (write-file! target-filename target-str))))
