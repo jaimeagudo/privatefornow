@@ -8,15 +8,7 @@
             [diffit.map :as m]
             [clojure.tools.cli :refer [parse-opts]]))
 
-;; To hold the default cli-opts values, perhaps could be better to define here
-;; all the relevant values rather than on the cl options
 
-
-;; (yaml/parse-string "
-;; - {name: John Smith, age: 33}
-;; - name: Mary Smith
-;;   age: 27
-;; ")
 
 (def cli-options
   ;; An option with a required argument
@@ -155,9 +147,10 @@
     ;; Backup current config
 ;;     (backup! (:current-yaml options))
     (let [result-config (upgrade-config! current-config new-config options)]
-     (log result-config)
-     (log "Writing yaml... ")
-     (write-yaml "result.yaml" result-config)
+      (log result-config)
+      (log "Writing yaml... ")
+      (write-yaml "result.yaml" result-config (:new-yaml options))
+      )
 ;;      (write-yaml (:current-yaml options result-config))
      (log "Done!")
-     )))
+     ))
