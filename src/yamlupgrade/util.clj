@@ -15,6 +15,30 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(def verbosity-loglevel
+  {0 :info
+   1 :debug
+   2 :trace})
+
+
+(defn config-logger!
+  "Config the log level among (:trace :debug :info :warn :error :fatal :report)
+   If empty it picks up the properties file value or :error "
+  ([]
+   ;; Too much vvvvvv won't go further than :trace :)
+   (config-logger! (get verbosity-loglevel (-> @cli-opts :options :verbosity) :trace )))
+  ([loglevel]
+    (timbre/set-level! loglevel)
+    (timbre/set-config! [:timestamp-pattern] "yyyy-MMM-dd HH:mm:ss")
+    (timbre/set-config! [:timestamp-locale] (java.util.Locale/UK))
+    (timbre/set-config! [:appenders :spit :enabled?] true)
+  ))
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
 (defn sanitize
   "Sanitize string to remove prohibited chars"
   [s]
@@ -28,40 +52,19 @@
         string/trim
         (string/replace #"'" ""))))
 
-(def verbosity-loglevel
-  {0 :info
-   1 :debug
-   2 :trace})
-
-
-(defn config-logger!
-  "Config the log level among (:trace :debug :info :warn :error :fatal :report)
-   If empty it picks up the properties file value or :error "
-  ([]
-   (config-logger! (get verbosity-loglevel (-> @cli-opts :options :verbosity))))
-  ([loglevel]
-    (timbre/set-level! loglevel)
-    (timbre/set-config! [:timestamp-pattern] "yyyy-MMM-dd HH:mm:ss")
-    (timbre/set-config! [:timestamp-locale] (java.util.Locale/UK))
-    (timbre/set-config! [:appenders :spit :enabled?] true)
-  ))
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
 (defn cast-it!
   [o]
   (try
     (case o
-      (\newline \return \space \tab nil) nil
+      (\newline \return \space \tab "" nil) nil
       "false" false
       "true"  true
       (Integer/parseInt o))
     (catch Exception ex
-      (error ex)
+      (timbre/stacktrace ex)
       o)))
+
+(cast-it! "")
 
 
 (defn replace-nils!
@@ -78,8 +81,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; IO ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defn safe-read
-  "Should be ~safe~ to read a char with this"
+(defn read-custom
+  "Should be ~safe~ to read a line with this"
   []
   (binding [*read-eval* false]
     (let [cr (ConsoleReader.)]
@@ -118,8 +121,7 @@
   (let [k (first kv)
         index (k keys-index)
         new-ascii-line (yaml/generate-string (apply hash-map kv) :dumper-options {:flow-style :block})]
-    (trace index)
-    (trace new-ascii-line)
+    (trace "index=" index  "new-ascii-line=" new-ascii-line)
     (assoc template-vec index new-ascii-line)))
 
 
@@ -178,13 +180,12 @@
   (try
     ; could use mv perhaps
     (let [command (str "cp -f " filename " " filename ".old")]
-      (trace (sh "pwd")) ; see :dir http://clojuredocs.org/clojure.java.shell/sh TODO
-      (trace command)
+      (trace "pwd=" (sh "pwd") "command=" command) ; see :dir http://clojuredocs.org/clojure.java.shell/sh TODO
       (= 0 (:exit (sh command))))
   (catch Exception ex
-        (error ex)
-        (error "backup: Cannot write file: " filename)
-        nil)))
+    (error "backup: Cannot write file: " filename)
+    (timbre/stacktrace ex)
+    nil)))
 
 
 (defn exit [status msg]

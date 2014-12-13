@@ -43,7 +43,7 @@
         ""
         "Options:"
         options-summary
-        "Please refer to the manual page for more information."]
+        "\nPlease refer to the manual page for more information."]
        (string/join \n)))
 
 
@@ -54,7 +54,7 @@
   [current-config new-config conflict-keys]
   (println "Please choose to (k)eep the current value, (u)pgrade to new version safe default value or a (c)ustom one")
   (println "--------------------------------------------------------------------------------------------------------")
-  (trace "conflicting keys"  conflict-keys)
+  (trace "conflicting keys="  conflict-keys)
   (let [values
           (for [k conflict-keys
                 :let [current (k current-config)
@@ -64,11 +64,13 @@
               (let [chosen (case (safe-read-char)
                              \k current
                              \u new
-                             \c (cast-it! (sanitize (safe-read)))
+                             \c (cast-it! (sanitize (read-custom)))
                              nil)]
                 (if (nil? chosen)
                   (recur)
-                  chosen))))]
+                  (do
+                    (println "=>"(name k) "=" chosen)
+                  chosen)))))]
             (trace "resolved conflicts" values)
             (zipmap conflict-keys values)))
 
@@ -87,9 +89,10 @@
                   :let [v (k m)]]
               (loop []
                 (println (str (name k) "=" v "(k)  <<CUSTOM>>(c)"))
+                (flush) ; needed whith increased loglevel
                 (let [chosen (case (safe-read-char)
                                \k v
-                               \c (cast-it! (sanitize (safe-read)))
+                               \c (cast-it! (sanitize (read-custom)))
                                nil)]
                   (if (nil? chosen)
                     (recur)

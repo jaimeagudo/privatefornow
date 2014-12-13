@@ -475,7 +475,7 @@ compaction_preheat_key_cache: true
 # stream_throughput_outbound_megabits_per_sec: 200
 
 # How long the coordinator should wait for read operations to complete
-read_request_timeout_in_ms: 10000
+read_request_timeout_in_ms: 1
 
 # How long the coordinator should wait for seq or index scans to complete
 range_request_timeout_in_ms: 10000
@@ -672,7 +672,7 @@ internode_compression: all
 # Disabling it will result in larger (but fewer) network packets being sent,
 # reducing overhead from the TCP protocol itself, at the cost of increasing
 # latency if you block for cross-datacenter responses.
-inter_dc_tcp_nodelay: true
+inter_dc_tcp_nodelay: 1
 
 
 # Enable or disable kernel page cache preheating from contents of the key cache after compaction.
