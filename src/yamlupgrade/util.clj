@@ -26,14 +26,12 @@
     (-> s string/lower-case
         (string/replace BLACKLIST_PATTERN " ")
         string/trim
-        ;;         (s/replace #"[\s]+" "-")
         (string/replace #"'" ""))))
 
 (def verbosity-loglevel
-  {0 :error
-   1 :info
-   2 :debug
-   3 :trace})
+  {0 :info
+   1 :debug
+   2 :trace})
 
 
 (defn config-logger!
@@ -42,23 +40,12 @@
   ([]
    (config-logger! (get verbosity-loglevel (-> @cli-opts :options :verbosity))))
   ([loglevel]
-;;   	(println "Configuring logger..." ERR_LOG ", level: " loglevel)
     (timbre/set-level! loglevel)
     (timbre/set-config! [:timestamp-pattern] "yyyy-MMM-dd HH:mm:ss")
     (timbre/set-config! [:timestamp-locale] (java.util.Locale/UK))
     (timbre/set-config! [:appenders :spit :enabled?] true)
-;;     (timbre/set-config! [:shared-appender-config :spit-filename] ERR_LOG))
   ))
 
-(defn error-msg [errors]
-  (error "The following errors occurred while parsing your command:\n\n"
-       (string/join \newline errors)))
-
-
-
-(defn exit [status msg]
-  (info msg)
-  (System/exit status))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -68,13 +55,13 @@
   [o]
   (try
     (case o
+      (\newline \return \space \tab nil) nil
       "false" false
       "true"  true
       (Integer/parseInt o))
     (catch Exception ex
-;;       (error ex)
+      (error ex)
       o)))
-
 
 
 (defn replace-nils!
@@ -150,6 +137,8 @@
       (assoc m k index))))
 
 
+
+
 (defn write-file!
   "Returns true on success"
   [target-filename s]
@@ -164,8 +153,6 @@
 
 
 
-
-
 (defn write-yaml!
   "Writes a .yaml file upgrading the values in the given template-filename with the given map"
   ([target-filename new-config template-filename]
@@ -174,7 +161,6 @@
           ;; We build a template index once O(n) to gain direct access and so constant access time O(1) to make fast replacements
           ;; On this map keys are variables and values are the line numbers within the template file
           template-properties-index (apply merge (keep-indexed parse-and-index-yaml template))
-;;           j (do (println "index==========") (pprint template-config-index))
           ;; We partially call replace-in-template with the template-config
           ;; index map as reduce f accepts just 2 arguments
           ascii-vec (reduce (partial replace-in-template template-properties-index) template new-config)
@@ -200,3 +186,7 @@
         (error "backup: Cannot write file: " filename)
         nil)))
 
+
+(defn exit [status msg]
+  (info msg)
+  (System/exit status))

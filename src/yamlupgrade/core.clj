@@ -54,8 +54,7 @@
   [current-config new-config conflict-keys]
   (println "Please choose to (k)eep the current value, (u)pgrade to new version safe default value or a (c)ustom one")
   (println "--------------------------------------------------------------------------------------------------------")
-;;   (trace "conflicting keys=>")
-;;   (trace  conflict-keys)
+  (trace "conflicting keys"  conflict-keys)
   (let [values
           (for [k conflict-keys
                 :let [current (k current-config)
@@ -72,6 +71,8 @@
                   chosen))))]
             (trace "resolved conflicts" values)
             (zipmap conflict-keys values)))
+
+
 
 
 (defn customize-map
@@ -98,28 +99,6 @@
 
 
 
-;; (defn fetch-custom-values!
-;;   "For each key in the given map ask to keep its current value or a custom one. It retuns the resultant map"
-;;   [m]
-;;   (println "Please choose to (k)eep the current safe default value or provide a (c)ustom one")
-;;   (println "--------------------------------------------------------------------------------")
-;;   (let [ks (keys m)
-;;         values
-;;             (for [k ks
-;;                   :let [v (k m)]]
-;;               (loop []
-;;                 (println (str (name k) "=" v "(k)  <<CUSTOM>>(c)"))
-;;                 (let [chosen (case (safe-read-char)
-;;                                \k v
-;;                                \c (cast-it! (sanitize (safe-read)))
-;;                                nil)]
-;;                   (if (nil? chosen)
-;;                     (recur)
-;;                     chosen))))]
-;;     (trace "values")
-;;     (trace values)
-;;     (zipmap ks values)))
-
 
 (defn confirm-edit-script!
   "Confirms with user the edit-script between the given configs to reach
@@ -136,7 +115,7 @@
               "interactive"  (resolve-conflicts current-config new-config (map first (:r edit-script)))))]
 
       (when (seq (:- edit-script))
-        (warn "The following options found in your current .yaml file are DEPRECATED and so REMOVED from your new configuration\n"
+        (info "The following options found in your current .yaml file are DEPRECATED and so REMOVED from your new configuration\n"
                      (map #(str (name %) \n)   (:- edit-script))))
 
       (if (seq (:+ edit-script))
@@ -166,12 +145,15 @@
      (:help options) (exit 0 (usage summary))
      ;;       (not= (count arguments) 1) (exit 1 (usage summary))
      (or (nil? current-config) (nil? new-config)) (exit 1)
-     errors (exit 1 (error-msg errors)))
+     errors (exit 1 (error "The following errors occurred while parsing your command:\n\n"
+                         (string/join \newline errors))))
 ;; Backup current config
 ;;     (backup! (:current-yaml options))
     (let [result-config (confirm-edit-script! current-config new-config options)]
       (trace result-config)
       (info "Writing yaml... ")
       (write-yaml! "result.yaml" result-config (:new-yaml options)))
-     (info "Done!")
-     ))
+    (info "Done!")
+;;   Shutdown timbre agents
+    (shutdown-agents)
+    ))
