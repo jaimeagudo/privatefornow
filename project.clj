@@ -1,4 +1,4 @@
-(defproject yamlupgrade "0.1.0-SNAPSHOT"
+(defproject yamlupgrade "0.1.0"
   :description "cassandra.yaml upgrade tool"
   :url "http://github.com/jaimeagudo/yamlupgrade"
   :license {:name "Eclipse Public License"

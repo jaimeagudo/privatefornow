@@ -145,6 +145,7 @@
   "Returns true on success"
   [target-filename s]
   (try
+    (info (str "Writing upgraded " target-filename " ..."))
     (spit target-filename s)
     true
     (catch Exception ex

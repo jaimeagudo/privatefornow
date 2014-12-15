@@ -12,6 +12,7 @@
 
 
 (def cli-options
+  ;; Options are treated as arguments, TOFIX
    ;; An option with a required argument
   [["-n" "--new-yaml TARGET" "Path to the new default cassandra.yaml"]
    ;; An option with a required argument
@@ -24,6 +25,7 @@
    ["-t" "--tune-new-options" "Interactively tune new config options, false by default, safe-defaults provided."
     :id :tune ]
    ["-i" "--ignore-comments" "Reduce the chance of error on the migration ignoring any comments, generally safer"]
+;;    ["-s" "--add-signature" "Add a generation signature with timestamp"] ; TODO
    ;; A non-idempotent option
    ["-v" nil "Verbosity level"
     :id :verbosity
@@ -38,7 +40,7 @@
 (defn usage [options-summary]
   (->> ["cassandra.yaml upgrade tool."
         ""
-        "Usage: program-name [options]. By default it will interactively ask to resolve conflicts between current cli-optsuration and the new default values"
+        "Usage: yaml-upgrade [options]. By default it will interactively ask to resolve conflicts between current cli-optsuration and the new default values"
         ""
         "Options:"
         options-summary
@@ -161,7 +163,6 @@
               (trace (str "result-config= "result-config))
               ;; Backup current config
               (backup! current-yaml)
-              (info (str "Writing upgraded " current-yaml " ..."))
               (if (write-yaml! current-yaml result-config template-file)
                 (exit 0 "Done!")
                 (exit 1 "Failed!"))
