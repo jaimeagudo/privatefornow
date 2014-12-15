@@ -21,7 +21,8 @@ cluster_name: 'Test Cluster'
 #
 # If you already have a cluster with 1 token per node, and wish to migrate to 
 # multiple tokens per node, see http://wiki.apache.org/cassandra/Operations
-num_tokens: 256
+num_tokens: 128
+
 
 # initial_token allows you to specify tokens manually.  While you can use # it with
 # vnodes (num_tokens > 1, above) -- in which case you should provide a 
@@ -418,7 +419,9 @@ auto_snapshot: true
 # scan more tombstones anyway.  These thresholds may also be adjusted at runtime
 # using the StorageService mbean.
 tombstone_warn_threshold: 1000
+
 tombstone_failure_threshold: 100000
+
 
 # Add column indexes to a row after its contents reach this size.
 # Increase if your column values are large, or if you have a very large
@@ -475,7 +478,7 @@ compaction_preheat_key_cache: true
 # stream_throughput_outbound_megabits_per_sec: 200
 
 # How long the coordinator should wait for read operations to complete
-read_request_timeout_in_ms: 1
+read_request_timeout_in_ms: 10000
 
 # How long the coordinator should wait for seq or index scans to complete
 range_request_timeout_in_ms: 10000
@@ -484,7 +487,8 @@ write_request_timeout_in_ms: 10000
 
 # How long a coordinator should continue to retry a CAS operation
 # that contends with other proposals for the same row
-cas_contention_timeout_in_ms: 1000
+cas_contention_timeout_in_ms: 100
+
 # How long the coordinator should wait for truncates to complete
 # (This can be much longer, because unless auto_snapshot is disabled
 # we need to flush first so we can snapshot before removing the data.)
@@ -672,11 +676,11 @@ internode_compression: all
 # Disabling it will result in larger (but fewer) network packets being sent,
 # reducing overhead from the TCP protocol itself, at the cost of increasing
 # latency if you block for cross-datacenter responses.
-inter_dc_tcp_nodelay: 1
+inter_dc_tcp_nodelay: true
 
 
 # Enable or disable kernel page cache preheating from contents of the key cache after compaction.
 # When enabled it would preheat only first "page" (4KB) of each row to optimize
 # for sequential access. Note: This could be harmful for fat rows, see CASSANDRA-4937
 # for further details on that topic.
-preheat_kernel_page_cache: false
+preheat_kernel_page_cache: true

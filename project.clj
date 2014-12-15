@@ -8,9 +8,11 @@
                  [com.taoensso/timbre "2.7.1"]
                  [diffit "1.0.0"]
                  [org.clojure/tools.cli "0.3.1"]
-;;                  [org.clojars.trptcolin/jline "2.10.3"]
-                 [jline "0.9.94"]
-                 ]
+                 [jline "0.9.94"]]
   :main ^:skip-aot yamlupgrade.core
   :target-path "target/%s"
-  :profiles {:uberjar {:aot :all}})
+  :profiles {:uberjar {:aot :all}
+             :dev {:dependencies [[midje "1.6.3"]]
+                   :resource-paths ["dummy-data"]}
+             }
+  )

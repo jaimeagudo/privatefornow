@@ -2,7 +2,8 @@
   (:gen-class)
   (:use [yamlupgrade.util]
         [clojure.pprint]
-        [taoensso.timbre :as timbre :refer (trace debug info warn error report)])
+        [taoensso.timbre :as timbre
+         :refer (trace debug info warn error report)])
   (:require [clj-yaml.core :as yaml]
             [clojure.string :as string]
             [diffit.map :as m]
@@ -11,22 +12,17 @@
 
 
 (def cli-options
-  ;; An option with a required argument
-  [["-n" "--new-yaml TARGET" "Path to the new default cassandra.yaml"
-    :default "resources/cassandra.2.0.3.yaml"
-    ]
-   ["-c" "--current-yaml CURRENT" "Path to the current cassandra.yaml"
-    :default "resources/cassandra.1.2.12.yaml"
-    ]
+   ;; An option with a required argument
+  [["-n" "--new-yaml TARGET" "Path to the new default cassandra.yaml"]
+   ;; An option with a required argument
+   ["-c" "--current-yaml CURRENT" "Path to the current cassandra.yaml"]
     ;; If no required argument description is given, the option is assumed to be a boolean option defaulting to nil
-   ["-r" "--conflicts-resolution CONFLICT-RESOLUTION" "Must be on of 'preserve' 'upgrade' 'interactive'. 'interactive' by default"
+   ["-r" "--conflicts-resolution CONFLICT-RESOLUTION" (str "Must be one of " CONFLICT_RESOLUTIONS ". 'interactive' by default")
     :id :conflict-resolution
-    :default "interactive"
-    :validate [#(some #{%} ["preserve" "upgrade" "interactive"]) "Must be one of 'preserve' 'upgrade' 'interactive'" ]
-    ]
+    :default (nth  CONFLICT_RESOLUTIONS 0)
+    :validate [#(some #{%} CONFLICT_RESOLUTIONS) (str "Must be one of " CONFLICT_RESOLUTIONS) ]]
    ["-t" "--tune-new-options" "Interactively tune new config options, false by default, safe-defaults provided."
-    :id :tune
-    ]
+    :id :tune ]
    ;; A non-idempotent option
    ["-v" nil "Verbosity level"
     :id :verbosity
@@ -44,17 +40,20 @@
         "Options:"
         options-summary
         "\nPlease refer to the manual page for more information."]
-       (string/join \n)))
+       (string/join \newline)))
 
 
 
 
 (defn resolve-conflicts
-  "Interactively build and return a map with the chosen values for the conflicting keys"
+  "Interactively build and return a map with the chosen values for the
+  conflicting keys"
   [current-config new-config conflict-keys]
+
+  (info "The following properties have different values in your current and the new version safe defaults")
+  (info conflict-keys)
   (println "Please choose to (k)eep the current value, (u)pgrade to new version safe default value or a (c)ustom one")
   (println "--------------------------------------------------------------------------------------------------------")
-  (trace "conflicting keys="  conflict-keys)
   (let [values
           (for [k conflict-keys
                 :let [current (k current-config)
@@ -66,7 +65,7 @@
                              \u new
                              \c (cast-it! (sanitize (read-custom)))
                              nil)]
-                (if (nil? chosen)
+                (if (or (nil? chosen) (not (= (type chosen) (type new)))) ;;
                   (recur)
                   (do
                     (println "=>"(name k) "=" chosen)
@@ -78,7 +77,8 @@
 
 
 (defn customize-map
-  "For each key in the given map ask to keep its current value or a custom one. It retuns the resultant map"
+  "For each key in the given map ask to keep its current value or a custom one.
+  It retuns the resultant map"
   [m]
   ;; TODO generate just changed ones
   (println "Please choose to (k)eep the current safe default value or provide a (c)ustom one")
@@ -109,17 +109,18 @@
   .yaml agnostic"
   [current-config new-config options]
     (let [edit-script (second (m/diff current-config new-config))
+          unused (trace "Edit-script=" edit-script)
+          conflict-keys (map first (:r edit-script))
           resolved-conflicts-edit-script
           (if (empty? (:r edit-script))
             {}
             (case (:conflict-resolution options)
-              "preserve"     (select-keys current-config (:r edit-script))
-              "upgrade"      (select-keys new-config (:r edit-script)); just take new safe-defaults from new config
-              "interactive"  (resolve-conflicts current-config new-config (map first (:r edit-script)))))]
-
+              "interactive"  (resolve-conflicts current-config new-config conflict-keys)
+              "preserve"     (select-keys current-config conflict-keys)
+              "upgrade"      (select-keys new-config conflict-keys)))]; just take new safe-defaults from new config
       (when (seq (:- edit-script))
         (info "The following options found in your current .yaml file are DEPRECATED and so REMOVED from your new configuration\n"
-                     (map #(str (name %) \n)   (:- edit-script))))
+              (map #(str (name %) \n) (:- edit-script))))
 
       (if (seq (:+ edit-script))
         (if (:tune options)
@@ -133,30 +134,30 @@
 
 
 
-
 (defn -main
   [& args]
   "Parse options and launch upgrade process"
   (reset! cli-opts (parse-opts args cli-options))
   (config-logger!)
   (let [{:keys [options arguments errors summary]} @cli-opts
-        current-config (parse-yaml (:current-yaml options))
-        new-config (parse-yaml (:new-yaml options))]
-;; Handle help and error conditions
-;; (trace options)
+        {:keys [current-yaml new-yaml]} options]
+    ;; Handle help and error conditions
+    (trace options)
     (cond
      (:help options) (exit 0 (usage summary))
-     ;;       (not= (count arguments) 1) (exit 1 (usage summary))
-     (or (nil? current-config) (nil? new-config)) (exit 1)
-     errors (exit 1 (error "The following errors occurred while parsing your command:\n\n"
-                         (string/join \newline errors))))
-;; Backup current config
-;;     (backup! (:current-yaml options))
-    (let [result-config (confirm-edit-script! current-config new-config options)]
-      (trace result-config)
-      (info "Writing yaml... ")
-      (write-yaml! "result.yaml" result-config (:new-yaml options)))
-    (info "Done!")
-;;   Shutdown timbre agents
-    (shutdown-agents)
-    ))
+     (or (nil? current-yaml) (nil? new-yaml)) (exit 1 (usage summary))
+     errors (exit 1 (str "The following errors occurred while parsing your command:\n\n"
+                           (string/join \newline errors))))
+    (let [current-config (parse-yaml current-yaml)
+          new-config (parse-yaml new-yaml)]
+          (if (or (nil? current-config) (nil? new-config))
+            (exit 1 "Cannot load file/s")
+            (let [result-config (confirm-edit-script! current-config new-config options)]
+              (trace (str "result-config= "result-config))
+              ;; Backup current config
+              (backup! current-yaml)
+              (info (str "Writing upgraded " current-yaml " ..."))
+              (if (write-yaml! current-yaml result-config new-yaml)
+                (exit 0 "Done!")
+                (exit 1 "Failed!"))
+            )))))

@@ -3,23 +3,25 @@
   (:import jline.ConsoleReader)
   (:gen-class)
   (:use [clojure.pprint]
-        [clojure.java.shell :only [sh]]
         [taoensso.timbre :as timbre :refer (trace debug info warn error report)])
   (:require [clj-yaml.core :as yaml]
             [clojure.data :as data]
-            [clojure.string :as string]))
+            [clojure.string :as string]
+            [clojure.java.io :as io]))
 
-;; To hold the default cli-opts values, perhaps could be better to define here all the relevant values rather than on the cl options
-
+;; To hold the default cli-opts values, perhaps could be better to define here
+;; all the relevant values rather than on the cl options
 (def cli-opts (atom {:options {:verbosity 0}}))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;; The first one is the default strategy
+(def CONFLICT_RESOLUTIONS ["interactive" "preserve" "upgrade"])
+;; mapping from "-vvv" strings to timbre loglevels
 (def verbosity-loglevel
   {0 :info
    1 :debug
    2 :trace})
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn config-logger!
   "Config the log level among (:trace :debug :info :warn :error :fatal :report)
@@ -53,18 +55,17 @@
         (string/replace #"'" ""))))
 
 (defn cast-it!
-  [o]
+  "Cast the given string into the right type and return it"
+  [s]
   (try
-    (case o
+    (case s
       (\newline \return \space \tab "" nil) nil
       "false" false
       "true"  true
-      (Integer/parseInt o))
+      (Integer/parseInt s))
     (catch Exception ex
       (timbre/stacktrace ex)
-      o)))
-
-(cast-it! "")
+      s)))
 
 
 (defn replace-nils!
@@ -78,15 +79,27 @@
 
 
 
+(defn replace-in-template
+  "Takes a map of indexes, an ASCII lines vector and pair of key-value to
+  replace the current one on the vector. It returns a new ASCII vector with the
+  replaced value.  O(1)."
+  [keys-index template-vec kv]
+  (let [k (first kv)
+        index (k keys-index)
+        new-ascii-line (yaml/generate-string (apply hash-map kv) :dumper-options {:flow-style :block})]
+    (trace "index=" index  "new-ascii-line=" new-ascii-line)
+    (assoc template-vec index new-ascii-line)))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; IO ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (defn read-custom
-  "Should be ~safe~ to read a line with this"
+  "Read a line allowing edition till the user hits enter"
   []
   (binding [*read-eval* false]
     (let [cr (ConsoleReader.)]
-      (.readLine cr "custom="))))
+      (.readLine cr "custom value (same type as original)="))))
 
 
 
@@ -102,27 +115,14 @@
 
 
 (defn parse-yaml
-  "Slurps a yaml file and returns it content as a map. If not present logs error and returns nil."
+  "Slurps a yaml file and returns it content as a map. If not present logs
+  error and returns nil."
   [filename]
   (try
     (yaml/parse-string (slurp filename))
     (catch Exception ex
       (error "safe-slurp: Cannot locate file: " filename)
       nil)))
-
-
-
-
-(defn replace-in-template
-  "Takes a map of indexes, an ASCII lines vector and pair of key-value to
-  replace the current one on the vector. It returns a new ASCII vector with the
-  replaced value.  O(1)."
-  [keys-index template-vec kv]
-  (let [k (first kv)
-        index (k keys-index)
-        new-ascii-line (yaml/generate-string (apply hash-map kv) :dumper-options {:flow-style :block})]
-    (trace "index=" index  "new-ascii-line=" new-ascii-line)
-    (assoc template-vec index new-ascii-line)))
 
 
 
@@ -141,7 +141,7 @@
 
 
 
-(defn write-file!
+(defn dump!
   "Returns true on success"
   [target-filename s]
   (try
@@ -156,7 +156,8 @@
 
 
 (defn write-yaml!
-  "Writes a .yaml file upgrading the values in the given template-filename with the given map"
+  "Writes a .yaml file upgrading the values in the given template-filename with
+  the given map. Return true on success"
   ([target-filename new-config template-filename]
     (let [;; An array with ASCII text lines
           template (string/split-lines (slurp template-filename))
@@ -166,28 +167,34 @@
           ;; We partially call replace-in-template with the template-config
           ;; index map as reduce f accepts just 2 arguments
           ascii-vec (reduce (partial replace-in-template template-properties-index) template new-config)
-          target-str
-;;           (string/replace
-                      (string/join "\n" ascii-vec ) ]
-;;                                      (re-pattern "null") "")]
-      (write-file! target-filename target-str))))
+          target-str (string/join "\n" ascii-vec) ]
+      (and (try
+             ;; We try to re-parse the generated string for validation sake
+             (yaml/parse-string target-str)
+             (info "Generated .yaml is valid")
+             true
+             (catch Exception ex
+               (error "Generated yaml is not valid, probalby comments messed up things, try safe-mode")
+               false))
+      (dump! target-filename target-str)))))
 
 
 
 (defn backup!
   "Creates a .old backup of the given file, returns true on success."
   [filename]
-  (try
-    ; could use mv perhaps
-    (let [command (str "cp -f " filename " " filename ".old")]
-      (trace "pwd=" (sh "pwd") "command=" command) ; see :dir http://clojuredocs.org/clojure.java.shell/sh TODO
-      (= 0 (:exit (sh command))))
-  (catch Exception ex
-    (error "backup: Cannot write file: " filename)
-    (timbre/stacktrace ex)
-    nil)))
+  (let [source-path filename
+        dest-path (str filename ".old")]
+    (info "Backing up" dest-path)
+    (try
+      (nil? (io/copy (io/file source-path) (io/file dest-path)))
+      (catch Exception ex
+        (error "backup: Error copying file: " filename)
+        (timbre/stacktrace ex)))))
 
-
-(defn exit [status msg]
+(defn exit
+  [status msg]
   (info msg)
+  ;;   Shutdown timbre agents to avoid delayed process termination
+  (shutdown-agents)
   (System/exit status))
