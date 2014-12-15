@@ -23,6 +23,7 @@
     :validate [#(some #{%} CONFLICT_RESOLUTIONS) (str "Must be one of " CONFLICT_RESOLUTIONS) ]]
    ["-t" "--tune-new-options" "Interactively tune new config options, false by default, safe-defaults provided."
     :id :tune ]
+   ["-i" "--ignore-comments" "Reduce the chance of error on the migration ignoring any comments, generally safer"]
    ;; A non-idempotent option
    ["-v" nil "Verbosity level"
     :id :verbosity
@@ -30,6 +31,8 @@
     :assoc-fn (fn [m k _] (update-in m [k] inc))]
    ;; A boolean option defaulting to nil
    ["-h" "--help"]])
+
+
 
 
 (defn usage [options-summary]
@@ -142,6 +145,7 @@
   (let [{:keys [options arguments errors summary]} @cli-opts
         {:keys [current-yaml new-yaml]} options]
     ;; Handle help and error conditions
+    (println "(:ignore-comments options)" (:ignore-comments options))
     (trace options)
     (cond
      (:help options) (exit 0 (usage summary))
@@ -152,12 +156,13 @@
           new-config (parse-yaml new-yaml)]
           (if (or (nil? current-config) (nil? new-config))
             (exit 1 "Cannot load file/s")
-            (let [result-config (confirm-edit-script! current-config new-config options)]
+            (let [result-config (confirm-edit-script! current-config new-config options)
+                  template-file (if-not (:ignore-comments options) new-yaml)]
               (trace (str "result-config= "result-config))
               ;; Backup current config
               (backup! current-yaml)
               (info (str "Writing upgraded " current-yaml " ..."))
-              (if (write-yaml! current-yaml result-config new-yaml)
+              (if (write-yaml! current-yaml result-config template-file)
                 (exit 0 "Done!")
                 (exit 1 "Failed!"))
             )))))

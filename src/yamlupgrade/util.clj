@@ -158,8 +158,14 @@
 (defn write-yaml!
   "Writes a .yaml file upgrading the values in the given template-filename with
   the given map. Return true on success"
+  ([target-filename new-config]
+   ;; As there is no template no comments are possible, just a plain yaml file will be generated
+   (let [target-str (yaml/generate-string new-config :dumper-options {:flow-style :block})]
+     (dump! target-filename target-str)))
   ([target-filename new-config template-filename]
-    (let [;; An array with ASCII text lines
+   (if (nil? template-filename)
+     (write-yaml! target-filename new-config)
+     (let [;; An array with ASCII text lines
           template (string/split-lines (slurp template-filename))
           ;; We build a template index once O(n) to gain direct access and so constant access time O(1) to make fast replacements
           ;; On this map keys are variables and values are the line numbers within the template file
@@ -176,7 +182,9 @@
              (catch Exception ex
                (error "Generated yaml is not valid, probalby comments messed up things, try safe-mode")
                false))
-      (dump! target-filename target-str)))))
+      (dump! target-filename target-str))))))
+
+
 
 
 
