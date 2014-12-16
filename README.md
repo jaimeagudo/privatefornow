@@ -6,7 +6,9 @@ Inspired by [Datastax](http://www.datastax.com/)
 
 ## Installation
 
-Download from http://github.com/jaimeagudo/yamlupgrade
+![Clojars Project](http://clojars.org/yamlupgrade/latest-version.svg)
+
+Alternatively clone from http://github.com/jaimeagudo/yamlupgrade
 
 ## Usage
 
