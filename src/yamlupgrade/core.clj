@@ -9,7 +9,7 @@
             [diffit.map :as m]
             [clojure.tools.cli :refer [parse-opts]]))
 
-
+;; ##Command line auxiliary stuff
 
 (def cli-options
   ;; Options are treated as arguments, TOFIX
@@ -48,7 +48,7 @@
        (string/join \newline)))
 
 
-
+;; ## User interaction to resolve conflicts
 
 (defn resolve-conflicts
   "Interactively build and return a map with the chosen values for the
@@ -79,7 +79,7 @@
             (zipmap conflict-keys values)))
 
 
-
+;; ## User interaction to tune defaults for new properties
 
 (defn customize-map
   "For each key in the given map ask to keep its current value or a custom one.

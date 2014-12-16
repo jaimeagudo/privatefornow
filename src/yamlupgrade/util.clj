@@ -21,7 +21,7 @@
    2 :trace})
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ============================================================================
 
 (defn config-logger!
   "Config the log level among (:trace :debug :info :warn :error :fatal :report)
@@ -37,8 +37,6 @@
   ))
 
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 (defn sanitize
@@ -78,6 +76,7 @@
 
 
 
+;; Core function to keep comments on the resultant file.
 
 (defn replace-in-template
   "Takes a map of indexes, an ASCII lines vector and pair of key-value to
@@ -91,7 +90,7 @@
     (assoc template-vec index new-ascii-line)))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; IO ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ## IO System Utilities
 
 
 (defn read-custom
