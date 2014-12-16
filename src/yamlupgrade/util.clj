@@ -21,7 +21,6 @@
    2 :trace})
 
 
-;; ============================================================================
 
 (defn config-logger!
   "Config the log level among (:trace :debug :info :warn :error :fatal :report)
